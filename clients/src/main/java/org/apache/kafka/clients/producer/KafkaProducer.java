@@ -35,6 +35,7 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.ApiException;
@@ -74,6 +75,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -228,7 +230,7 @@ import static org.apache.kafka.common.serialization.ExtendedSerializer.Wrapper.e
  * <code>UnsupportedVersionException</code> when invoking an API that is not available in the running broker version.
  * </p>
  */
-public class KafkaProducer<K, V> implements Producer<K, V> {
+public class KafkaProducer<K, V> implements Producer<K, V>, Reconfigurable {
 
     private final Logger log;
     private static final AtomicInteger PRODUCER_CLIENT_ID_SEQUENCE = new AtomicInteger(1);
@@ -243,6 +245,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private final long totalMemorySize;
     private final Metadata metadata;
     private final RecordAccumulator accumulator;
+    private final ChannelBuilder channelBuilder;
     private final Sender sender;
     private final Thread ioThread;
     private final CompressionType compressionType;
@@ -411,7 +414,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     true, true, clusterResourceListeners);
                 this.metadata.update(Cluster.bootstrap(addresses), Collections.<String>emptySet(), time.milliseconds());
             }
-            ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config);
+            this.channelBuilder = ClientUtils.createChannelBuilder(config);
             Sensor throttleTimeSensor = Sender.throttleTimeSensor(metricsRegistry.senderMetrics);
             KafkaClient client = kafkaClient != null ? kafkaClient : new NetworkClient(
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG),
@@ -1138,6 +1141,34 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             }
             throw new KafkaException("Failed to close kafka producer", exception);
         }
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        if (channelBuilder instanceof Reconfigurable) {
+            return ((Reconfigurable) channelBuilder).reconfigurableConfigs();
+        } else {
+            return Collections.emptySet();
+        }
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).validateReconfiguration(configs);
+        }
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).reconfigure(configs);
+        }
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
+        channelBuilder.configure(configs);
     }
 
     private ClusterResourceListeners configureClusterResourceListeners(Serializer<K> keySerializer, Serializer<V> valueSerializer, List<?>... candidateLists) {
