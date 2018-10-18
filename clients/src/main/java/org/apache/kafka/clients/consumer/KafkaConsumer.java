@@ -38,6 +38,7 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.InvalidGroupIdException;
@@ -82,6 +83,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 import static org.apache.kafka.clients.consumer.internals.PartitionAssignorAdapter.getAssignorInstances;
+
+import static java.util.Collections.emptySet;
 
 /**
  * A client that consumes records from a Kafka cluster.
@@ -558,7 +561,7 @@ import static org.apache.kafka.clients.consumer.internals.PartitionAssignorAdapt
  * the consumer threads can hash into these queues using the TopicPartition to ensure in-order consumption and simplify
  * commit.
  */
-public class KafkaConsumer<K, V> implements Consumer<K, V> {
+public class KafkaConsumer<K, V> implements Consumer<K, V>, Reconfigurable {
 
     private static final String CLIENT_ID_METRIC_TAG = "client-id";
     private static final long NO_CURRENT_THREAD = -1L;
@@ -579,6 +582,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     private final ConsumerInterceptors<K, V> interceptors;
 
     private final Time time;
+    private final ChannelBuilder channelBuilder;
     private final ConsumerNetworkClient client;
     private final SubscriptionState subscriptions;
     private final ConsumerMetadata metadata;
@@ -737,7 +741,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             String metricGrpPrefix = "consumer";
 
             FetcherMetricsRegistry metricsRegistry = new FetcherMetricsRegistry(Collections.singleton(CLIENT_ID_METRIC_TAG), metricGrpPrefix);
-            ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config, time, logContext);
+            this.channelBuilder = ClientUtils.createChannelBuilder(config, time, logContext);
             IsolationLevel isolationLevel = IsolationLevel.valueOf(
                     config.getString(ConsumerConfig.ISOLATION_LEVEL_CONFIG).toUpperCase(Locale.ROOT));
             Sensor throttleTimeSensor = Fetcher.throttleTimeSensor(metrics, metricsRegistry);
@@ -850,6 +854,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         this.fetcher = fetcher;
         this.interceptors = Objects.requireNonNull(interceptors);
         this.time = time;
+        this.channelBuilder = null;
         this.client = client;
         this.metrics = metrics;
         this.subscriptions = subscriptions;
@@ -2353,6 +2358,34 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     @Override
     public void wakeup() {
         this.client.wakeup();
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        if (channelBuilder instanceof Reconfigurable) {
+            return ((Reconfigurable) channelBuilder).reconfigurableConfigs();
+        } else {
+            return emptySet();
+        }
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).validateReconfiguration(configs);
+        }
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).reconfigure(configs);
+        }
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
+        channelBuilder.configure(configs);
     }
 
     private ClusterResourceListeners configureClusterResourceListeners(Deserializer<K> keyDeserializer, Deserializer<V> valueDeserializer, List<?>... candidateLists) {

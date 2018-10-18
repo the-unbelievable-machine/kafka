@@ -39,6 +39,7 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.ApiException;
@@ -83,6 +84,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -231,7 +233,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <code>UnsupportedVersionException</code> when invoking an API that is not available in the running broker version.
  * </p>
  */
-public class KafkaProducer<K, V> implements Producer<K, V> {
+public class KafkaProducer<K, V> implements Producer<K, V>, Reconfigurable {
 
     private final Logger log;
     private static final String JMX_PREFIX = "kafka.producer";
@@ -246,6 +248,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private final long totalMemorySize;
     private final ProducerMetadata metadata;
     private final RecordAccumulator accumulator;
+    private final ChannelBuilder channelBuilder;
     private final Sender sender;
     private final Thread ioThread;
     private final CompressionType compressionType;
@@ -426,6 +429,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         Time.SYSTEM);
                 this.metadata.bootstrap(addresses);
             }
+            this.channelBuilder = ClientUtils.createChannelBuilder(producerConfig, time, logContext);
             this.errors = this.metrics.sensor("errors");
             this.sender = newSender(logContext, kafkaClient, this.metadata);
             String ioThreadName = NETWORK_THREAD_PREFIX + " | " + clientId;
@@ -446,7 +450,6 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     Sender newSender(LogContext logContext, KafkaClient kafkaClient, ProducerMetadata metadata) {
         int maxInflightRequests = configureInflightRequests(producerConfig);
         int requestTimeoutMs = producerConfig.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
-        ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(producerConfig, time, logContext);
         ProducerMetrics metricsRegistry = new ProducerMetrics(this.metrics);
         Sensor throttleTimeSensor = Sender.throttleTimeSensor(metricsRegistry.senderMetrics);
         KafkaClient client = kafkaClient != null ? kafkaClient : new NetworkClient(
@@ -1252,6 +1255,34 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             }
         }
         return map;
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        if (channelBuilder instanceof Reconfigurable) {
+            return ((Reconfigurable) channelBuilder).reconfigurableConfigs();
+        } else {
+            return Collections.emptySet();
+        }
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).validateReconfiguration(configs);
+        }
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).reconfigure(configs);
+        }
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
+        channelBuilder.configure(configs);
     }
 
     private ClusterResourceListeners configureClusterResourceListeners(Serializer<K> keySerializer, Serializer<V> valueSerializer, List<?>... candidateLists) {
