@@ -47,6 +47,7 @@ import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.TopicPartitionReplica;
@@ -241,6 +242,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.Collections.emptySet;
 import static org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData.ReassignablePartition;
 import static org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse;
 import static org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData.ReassignableTopicResponse;
@@ -257,7 +259,7 @@ import static org.apache.kafka.common.utils.Utils.closeQuietly;
  * The API of this class is evolving, see {@link Admin} for details.
  */
 @InterfaceStability.Evolving
-public class KafkaAdminClient extends AdminClient {
+public class KafkaAdminClient extends AdminClient implements Reconfigurable {
 
     /**
      * The next integer to use to name a KafkaAdminClient which the user hasn't specified an explicit name for.
@@ -295,6 +297,8 @@ public class KafkaAdminClient extends AdminClient {
      * The name of this AdminClient instance.
      */
     private final String clientId;
+
+    private final ChannelBuilder channelBuilder;
 
     /**
      * Provides the time.
@@ -489,7 +493,7 @@ public class KafkaAdminClient extends AdminClient {
                 true,
                 apiVersions,
                 logContext);
-            return new KafkaAdminClient(config, clientId, time, metadataManager, metrics, networkClient,
+            return new KafkaAdminClient(config, clientId, channelBuilder, time, metadataManager, metrics, networkClient,
                 timeoutProcessorFactory, logContext);
         } catch (Throwable exc) {
             closeQuietly(metrics, "Metrics");
@@ -510,7 +514,7 @@ public class KafkaAdminClient extends AdminClient {
         try {
             metrics = new Metrics(new MetricConfig(), new LinkedList<>(), time);
             LogContext logContext = createLogContext(clientId);
-            return new KafkaAdminClient(config, clientId, time, metadataManager, metrics,
+            return new KafkaAdminClient(config, clientId, null, time, metadataManager, metrics,
                 client, null, logContext);
         } catch (Throwable exc) {
             closeQuietly(metrics, "Metrics");
@@ -524,6 +528,7 @@ public class KafkaAdminClient extends AdminClient {
 
     private KafkaAdminClient(AdminClientConfig config,
                              String clientId,
+                             ChannelBuilder channelBuilder,
                              Time time,
                              AdminMetadataManager metadataManager,
                              Metrics metrics,
@@ -532,6 +537,7 @@ public class KafkaAdminClient extends AdminClient {
                              LogContext logContext) {
         this.clientId = clientId;
         this.log = logContext.logger(KafkaAdminClient.class);
+        this.channelBuilder = channelBuilder;
         this.requestTimeoutMs = config.getInt(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG);
         this.defaultApiTimeoutMs = configureDefaultApiTimeoutMs(config);
         this.time = time;
@@ -618,6 +624,34 @@ public class KafkaAdminClient extends AdminClient {
             log.debug("Interrupted while joining I/O thread", e);
             Thread.currentThread().interrupt();
         }
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        if (channelBuilder instanceof Reconfigurable) {
+            return ((Reconfigurable) channelBuilder).reconfigurableConfigs();
+        } else {
+            return emptySet();
+        }
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).validateReconfiguration(configs);
+        }
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (channelBuilder instanceof Reconfigurable) {
+            ((Reconfigurable) channelBuilder).reconfigure(configs);
+        }
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
+        channelBuilder.configure(configs);
     }
 
     /**
