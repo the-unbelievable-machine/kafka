@@ -1,0 +1,36 @@
+= Build and release to nexus
+
+== Installation to local maven cache:
+
+    ./gradlew -Duser.language=en clients:install clients:publishToMavenLocal
+
+== Installation to nexus:
+
+Prepare `.m2/settings.xml`:
+
+    <servers>
+        <server>
+            <id>repo_id_in_settings_xml</id>
+            <username>user</username>
+            <password>pass</password>
+        </server>
+    </servers>
+
+Create artifact:
+
+    ./gradlew -Duser.language=en clients:install
+
+Run deploy-script:
+
+    URL=http://yournexus/nexus/content/repositories/yourrepo/
+    REPO_ID=repo_id_in_settings_xml
+
+    PACKAGE_NAME=kafka-clients-2.0.1_reconfigurable_2
+    LIBS=clients/build/libs
+    mvn deploy:deploy-file -DgeneratePom=false \
+        -DpomFile=$LIBS/../poms/pom-default.xml \
+        -Durl=$URL  \
+        -Dsources=$LIBS/$PACKAGE_NAME-sources.jar \
+        -Dfile=$LIBS/$PACKAGE_NAME.jar \
+        -Djavadoc=$LIBS/$PACKAGE_NAME-javadoc.jar \
+        -DrepositoryId=$REPO_ID

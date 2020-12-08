@@ -977,6 +977,8 @@ project(':clients') {
   // add jacksonDatabindConfig as provided scope config with high priority (1000)
   conf2ScopeMappings.addMapping(1000, configurations.jacksonDatabindConfig, "provided")
 
+  apply plugin: 'maven-publish'
+
   dependencies {
     compile libs.zstd
     compile libs.lz4
